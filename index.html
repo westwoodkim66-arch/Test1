@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>五百字說華語 · 音檔播放器</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --gold: #c9a84c;
+    --gold-dim: rgba(201,168,76,0.15);
+    --gold-glow: rgba(201,168,76,0.35);
+    --bg: #0e0e0f;
+    --surface: #161618;
+    --surface2: #1e1e21;
+    --border: rgba(255,255,255,0.07);
+    --text: #e8e4dc;
+    --text-dim: rgba(232,228,220,0.4);
+    --red: #e05555;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'DM Mono', monospace; overflow: hidden; }
+  #app { display: grid; grid-template-columns: 1fr 320px; grid-template-rows: auto 1fr; height: 100vh; }
+
+  /* Player Bar */
+  #player-bar { grid-column: 1/2; background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px 28px; display: flex; flex-direction: column; gap: 12px; }
+  #brand { display: flex; align-items: center; gap: 10px; }
+  #brand-icon { width: 36px; height: 36px; border-radius: 50%; background: var(--gold); display: flex; align-items: center; justify-content: center; box-shadow: 0 0 16px var(--gold-glow); }
+  #brand-icon svg { fill: #000; }
+  #brand-text h1 { font-family: 'Noto Serif TC', serif; font-size: 15px; color: var(--gold); letter-spacing: 0.05em; }
+  #brand-text p { font-size: 9px; letter-spacing: 0.25em; color: var(--text-dim); text-transform: uppercase; }
+  #track-info { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-dim); letter-spacing: 0.1em; }
+  #track-name { color: var(--gold); font-weight: 500; }
+  #progress-wrap { position: relative; height: 4px; background: var(--border); border-radius: 2px; cursor: pointer; margin-top: 8px; }
+  #progress-fill { height: 100%; background: var(--gold); border-radius: 2px; width: 0%; pointer-events: none; }
+  #progress-thumb { position: absolute; top: 50%; width: 12px; height: 12px; background: var(--gold); border-radius: 50%; transform: translate(-50%,-50%); left: 0%; box-shadow: 0 0 8px var(--gold-glow); pointer-events: none; }
+  #controls { display: flex; align-items: center; justify-content: space-between; }
+  .ctrl-group { display: flex; align-items: center; gap: 14px; }
+  button { background: none; border: none; cursor: pointer; color: var(--text-dim); display: flex; align-items: center; justify-content: center; transition: color 0.2s, transform 0.1s; }
+  button:hover { color: var(--text); }
+  button:active { transform: scale(0.92); }
+  #btn-play { width: 48px; height: 48px; border-radius: 50%; background: var(--gold); color: #000 !important; box-shadow: 0 0 20px var(--gold-glow); transition: transform 0.15s, box-shadow 0.15s; }
+  #btn-play:hover { transform: scale(1.08); box-shadow: 0 0 28px var(--gold-glow); }
+  #speed-btn { font-size: 10px; font-family: 'DM Mono', monospace; background: var(--surface2); border: 1px solid var(--border); color: var(--text-dim); padding: 4px 10px; border-radius: 20px; }
+  #vol-slider { width: 64px; accent-color: var(--gold); cursor: pointer; opacity: 0.5; transition: opacity 0.2s; }
+  #vol-slider:hover { opacity: 1; }
+  #error-bar { display: none; background: rgba(224,85,85,0.15); border: 1px solid rgba(224,85,85,0.3); border-radius: 6px; padding: 8px 14px; font-size: 11px; color: var(--red); align-items: center; gap: 10px; }
+  #error-bar.show { display: flex; }
+
+  /* Book Viewer */
+  #reader-wrap { grid-column: 1/2; overflow-y: auto; display: flex; flex-direction: column; align-items: center; padding: 24px; gap: 16px; background: var(--bg); }
+  #reader-toolbar { width: 100%; max-width: 860px; display: flex; align-items: center; justify-content: space-between; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+  #reader-label { display: flex; align-items: center; gap: 8px; font-size: 10px; letter-spacing: 0.2em; color: rgba(201,168,76,0.6); text-transform: uppercase; }
+  #page-controls { display: flex; align-items: center; gap: 8px; background: var(--surface2); border: 1px solid var(--border); border-radius: 20px; padding: 4px 14px; font-size: 11px; color: var(--text-dim); }
+  #page-controls button { color: var(--text-dim); font-size: 20px; line-height: 1; padding: 0 2px; }
+  #page-controls button:hover { color: var(--gold); }
+  #page-num { width: 40px; background: none; border: none; border-bottom: 1px solid rgba(255,255,255,0.15); color: var(--text); text-align: center; font-family: 'DM Mono', monospace; font-size: 11px; outline: none; }
+  #book-img-wrap { width: 100%; max-width: 860px; display: flex; justify-content: center; position: relative; }
+  #book-img { width: 100%; max-width: 860px; border-radius: 10px; box-shadow: 0 8px 48px rgba(0,0,0,0.6); display: block; background: var(--surface); min-height: 200px; object-fit: contain; }
+  #book-loading { display: none; position: absolute; inset: 0; align-items: center; justify-content: center; background: var(--surface); border-radius: 10px; }
+  #book-loading.show { display: flex; }
+
+  /* Sidebar */
+  #sidebar { grid-column: 2/3; grid-row: 1/3; background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+  #sidebar-header { padding: 18px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  #sidebar-header span { font-size: 10px; letter-spacing: 0.2em; color: var(--text-dim); text-transform: uppercase; }
+  #import-btn { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--gold); background: var(--gold-dim); border: none; padding: 5px 12px; border-radius: 20px; cursor: pointer; }
+  #import-btn:hover { background: rgba(201,168,76,0.25); }
+  #track-list { flex: 1; overflow-y: auto; padding: 8px; }
+  #track-list::-webkit-scrollbar { width: 4px; }
+  #track-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .track-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-radius: 8px; cursor: pointer; transition: background 0.15s; border: 1px solid transparent; }
+  .track-item:hover { background: var(--surface2); }
+  .track-item.active { background: rgba(201,168,76,0.08); border-color: rgba(201,168,76,0.2); }
+  .track-num { font-size: 11px; color: var(--text-dim); min-width: 22px; }
+  .track-item.active .track-num { color: var(--gold); }
+  .track-title { flex: 1; font-size: 13px; color: rgba(232,228,220,0.8); padding: 0 8px; }
+  .track-item.active .track-title { color: var(--gold); }
+  .track-status { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-dim); }
+  .track-item.active .track-status { color: var(--gold); }
+  .track-status.error { color: var(--red); }
+  .bars { display: flex; gap: 2px; align-items: flex-end; height: 14px; }
+  .bar { width: 3px; background: var(--gold); border-radius: 1px; animation: bounce 0.7s ease infinite alternate; }
+  .bar:nth-child(2) { animation-delay: 0.15s; }
+  .bar:nth-child(3) { animation-delay: 0.3s; }
+  @keyframes bounce { from { height: 3px; } to { height: 13px; } }
+  .paused .bar { animation-play-state: paused; }
+  .spinner { width: 28px; height: 28px; border: 2px solid var(--border); border-top-color: var(--gold); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #loading-state { padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 12px; opacity: 0.5; }
+  #empty-state { padding: 60px 20px; display: none; flex-direction: column; align-items: center; gap: 12px; opacity: 0.2; text-align: center; }
+
+  @media (max-width: 700px) {
+    #app { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; height: auto; }
+    #sidebar { grid-column: 1; grid-row: 3; height: 280px; }
+    html, body { overflow: auto; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- Player Bar -->
+  <header id="player-bar">
+    <div id="brand">
+      <div id="brand-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>
+      </div>
+      <div id="brand-text">
+        <h1>五百字說華語</h1>
+        <p>Digital Audio Library</p>
+      </div>
+    </div>
+
+    <div id="error-bar">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+      <span id="error-msg"></span>
+    </div>
+
+    <div>
+      <div id="track-info">
+        <span id="time-current">0:00</span>
+        <span id="track-name">尚未選擇音檔</span>
+        <span id="time-total">0:00</span>
+      </div>
+      <div id="progress-wrap">
+        <div id="progress-fill"></div>
+        <div id="progress-thumb"></div>
+      </div>
+    </div>
+
+    <div id="controls">
+      <div class="ctrl-group">
+        <button id="speed-btn" onclick="cycleSpeed()">1x</button>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button onclick="toggleMute()">
+            <svg id="vol-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+          </button>
+          <input type="range" id="vol-slider" min="0" max="1" step="0.01" value="0.85" oninput="setVolume(this.value)">
+        </div>
+      </div>
+
+      <div class="ctrl-group">
+        <button onclick="prevTrack()"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg></button>
+        <button onclick="seekRel(-5)" style="flex-direction:column;gap:0;"><span style="font-size:9px;line-height:1;">5</span><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg></button>
+        <button id="btn-play" onclick="togglePlay()"><svg id="play-icon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
+        <button onclick="seekRel(5)" style="flex-direction:column;gap:0;"><span style="font-size:9px;line-height:1;">5</span><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg></button>
+        <button onclick="nextTrack()"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zm2-8.14L11.03 12 8 14.14V9.86zM16 6h2v12h-2z"/></svg></button>
+      </div>
+
+      <div class="ctrl-group">
+        <button onclick="document.getElementById('file-input').click()"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M20 6h-8l-2-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2z"/></svg></button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Book Viewer -->
+  <div id="reader-wrap">
+    <div id="reader-toolbar">
+      <div id="reader-label">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 2v5l-2-1-2 1V4h4zm1 14H6V4h3v8l4-2 4 2V4h1v12z"/></svg>
+        教材閱覽 &nbsp;·&nbsp; 五百字說華語 中泰文版
+      </div>
+      <div id="page-controls">
+        <button onclick="changePage(-1)">&#8249;</button>
+        <span>第</span>
+        <input type="text" id="page-num" value="1" onchange="jumpToPage(this.value)">
+        <span>頁 / 共 <span id="page-total">239</span> 頁</span>
+        <button onclick="changePage(1)">&#8250;</button>
+      </div>
+    </div>
+    <div id="book-img-wrap">
+      <div id="book-loading" class="show"><div class="spinner"></div></div>
+      <img id="book-img" src="" alt="" style="display:none" onload="onImgLoad()" onerror="onImgError()">
+    </div>
+  </div>
+
+  <!-- Sidebar -->
+  <aside id="sidebar">
+    <div id="sidebar-header">
+      <span>Contents</span>
+      <button id="import-btn" onclick="document.getElementById('file-input').click()">Import</button>
+    </div>
+    <div id="track-list">
+      <div id="loading-state"><div class="spinner"></div><p style="font-size:11px;margin-top:8px;">載入音檔中...</p></div>
+      <div id="empty-state"><svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg><p>Library is empty</p><p style="font-size:10px;color:var(--text-dim);margin-top:4px;">點 Import 匯入音檔</p></div>
+    </div>
+  </aside>
+</div>
+
+<input type="file" id="file-input" multiple accept="audio/*,.zip" style="display:none" onchange="handleFileImport(this)">
+<audio id="audio" preload="auto"></audio>
+
+<script>
+// ── Book Viewer ─────────────────────────────────────────────
+const TOTAL_PAGES = 239;
+let bookPage = 1;
+
+function showBookPage(n) {
+  bookPage = Math.max(1, Math.min(TOTAL_PAGES, n));
+  document.getElementById('page-num').value = bookPage;
+  const img = document.getElementById('book-img');
+  const loading = document.getElementById('book-loading');
+  img.style.display = 'none';
+  loading.classList.add('show');
+  img.src = `/book/${bookPage}.jpg`;
+}
+function onImgLoad() {
+  document.getElementById('book-img').style.display = 'block';
+  document.getElementById('book-loading').classList.remove('show');
+}
+function onImgError() {
+  document.getElementById('book-loading').classList.remove('show');
+  const img = document.getElementById('book-img');
+  img.style.display = 'block';
+  img.alt = `找不到 /book/${bookPage}.jpg`;
+}
+function changePage(d) { showBookPage(bookPage + d); }
+function jumpToPage(v) { const n = parseInt(v); if (!isNaN(n)) showBookPage(n); }
+
+showBookPage(1);
+
+// ── Audio Player ────────────────────────────────────────────
+const audio = document.getElementById('audio');
+let tracks = [], currentIdx = -1, speedIdx = 0, prevVol = 0.85;
+const speeds = [1, 1.5, 2, 0.75];
+
+(async () => {
+  const candidates = Array.from({length:30}, (_, i) => {
+    const n = String(i+1).padStart(2,'0');
+    return {id:n, name:n, url:`/${n}.mp3`};
+  });
+  const checks = await Promise.allSettled(
+    candidates.map(t => fetch(t.url,{method:'HEAD'}).then(r => { if(!r.ok) throw 0; return t; }))
+  );
+  const found = checks.filter(r=>r.status==='fulfilled').map(r=>r.value);
+  document.getElementById('loading-state').style.display = 'none';
+  if (found.length > 0) { found.forEach(addTrack); selectTrack(0); }
+  else document.getElementById('empty-state').style.display = 'flex';
+})();
+
+function addTrack(t) {
+  tracks.push(t);
+  const idx = tracks.length - 1;
+  const el = document.createElement('div');
+  el.className = 'track-item'; el.id = `track-${idx}`;
+  el.innerHTML = `<span class="track-num">${idx+1}.</span><span class="track-title">課文 ${t.name}</span><span class="track-status" id="status-${idx}">Ready</span>`;
+  el.onclick = () => currentIdx === idx ? togglePlay() : selectTrack(idx);
+  document.getElementById('track-list').appendChild(el);
+}
+
+function selectTrack(idx) {
+  if (idx < 0 || idx >= tracks.length) return;
+  if (currentIdx >= 0) { document.getElementById(`track-${currentIdx}`)?.classList.remove('active'); setStatus(currentIdx,'Ready'); }
+  currentIdx = idx;
+  const t = tracks[idx];
+  audio.src = t.url || URL.createObjectURL(t.file);
+  audio.load(); audio.play().catch(()=>{});
+  document.getElementById(`track-${idx}`)?.classList.add('active');
+  document.getElementById(`track-${idx}`)?.scrollIntoView({block:'nearest'});
+  document.getElementById('track-name').textContent = `課文 ${t.name}`;
+  hideError(); setPlayIcon(true); setStatus(idx,'playing');
+}
+
+function setStatus(idx, state) {
+  const el = document.getElementById(`status-${idx}`);
+  if (!el) return;
+  el.className = 'track-status';
+  if (state==='playing') el.innerHTML = `<div class="bars"><div class="bar"></div><div class="bar"></div><div class="bar"></div></div>`;
+  else if (state==='paused') el.innerHTML = `<div class="bars paused"><div class="bar" style="height:8px"></div><div class="bar" style="height:4px"></div><div class="bar" style="height:10px"></div></div>`;
+  else if (state==='error') { el.textContent='ERROR'; el.classList.add('error'); }
+  else el.textContent = state;
+}
+
+function togglePlay() {
+  if (!tracks.length) return;
+  if (currentIdx < 0) { selectTrack(0); return; }
+  audio.paused ? audio.play() : audio.pause();
+}
+function nextTrack() { selectTrack((currentIdx+1) % tracks.length); }
+function prevTrack() { selectTrack((currentIdx-1+tracks.length) % tracks.length); }
+function seekRel(s) { audio.currentTime = Math.max(0, Math.min(audio.duration||0, audio.currentTime+s)); }
+function cycleSpeed() { speedIdx=(speedIdx+1)%speeds.length; audio.playbackRate=speeds[speedIdx]; document.getElementById('speed-btn').textContent=speeds[speedIdx]+'x'; }
+function setVolume(v) { audio.volume=v; prevVol=v; }
+function toggleMute() { audio.volume = audio.volume>0 ? (prevVol=audio.volume, 0) : prevVol; document.getElementById('vol-slider').value=audio.volume; }
+function setPlayIcon(p) { document.getElementById('play-icon').innerHTML = p ? '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>' : '<path d="M8 5v14l11-7z"/>'; }
+function showError(msg) { document.getElementById('error-msg').textContent=msg; document.getElementById('error-bar').classList.add('show'); }
+function hideError() { document.getElementById('error-bar').classList.remove('show'); }
+function fmt(s) { if(!s||isNaN(s)) return '0:00'; return `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`; }
+
+audio.addEventListener('timeupdate', () => {
+  const pct = audio.duration ? (audio.currentTime/audio.duration)*100 : 0;
+  document.getElementById('progress-fill').style.width = pct+'%';
+  document.getElementById('progress-thumb').style.left = pct+'%';
+  document.getElementById('time-current').textContent = fmt(audio.currentTime);
+});
+audio.addEventListener('loadedmetadata', () => { document.getElementById('time-total').textContent = fmt(audio.duration); });
+audio.addEventListener('play', () => { setPlayIcon(true); if(currentIdx>=0) setStatus(currentIdx,'playing'); });
+audio.addEventListener('pause', () => { setPlayIcon(false); if(currentIdx>=0) setStatus(currentIdx,'paused'); });
+audio.addEventListener('ended', nextTrack);
+audio.addEventListener('error', () => {
+  const msgs = {1:'播放中斷',2:'網路錯誤',3:'音檔解碼錯誤',4:'找不到音檔（404）'};
+  showError(msgs[audio.error?.code]||'播放失敗');
+  if(currentIdx>=0) setStatus(currentIdx,'error');
+  setPlayIcon(false);
+});
+document.getElementById('progress-wrap').addEventListener('click', e => {
+  const r = e.currentTarget.getBoundingClientRect();
+  audio.currentTime = ((e.clientX-r.left)/r.width)*(audio.duration||0);
+});
+
+async function handleFileImport(input) {
+  for (const f of Array.from(input.files)) {
+    if (f.name.endsWith('.zip')) await importZip(f);
+    else if (f.type.startsWith('audio/')) addTrack({id:'u'+tracks.length, name:f.name.replace(/\.[^.]+$/,''), file:f});
+  }
+  document.getElementById('empty-state').style.display='none';
+  input.value='';
+}
+async function importZip(file) {
+  if (!window.JSZip) await new Promise((res,rej) => { const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
+  const content = await new JSZip().loadAsync(file);
+  await Promise.all(Object.keys(content.files).map(async name => {
+    const entry=content.files[name];
+    if (!entry.dir && /\.(mp3|wav|m4a|ogg|flac)$/i.test(name)) {
+      const blob=await entry.async('blob');
+      addTrack({id:'z'+tracks.length, name:name.split('/').pop().replace(/\.[^.]+$/,''), file:new File([blob],name,{type:'audio/mpeg'})});
+    }
+  }));
+}
+
+document.addEventListener('keydown', e => {
+  if (e.target.tagName==='INPUT') return;
+  if (e.code==='Space') { e.preventDefault(); togglePlay(); }
+  if (e.code==='ArrowRight' && !e.altKey) seekRel(5);
+  if (e.code==='ArrowLeft' && !e.altKey) seekRel(-5);
+  if (e.code==='ArrowRight' && e.altKey) { e.preventDefault(); nextTrack(); }
+  if (e.code==='ArrowLeft' && e.altKey) { e.preventDefault(); prevTrack(); }
+  if (e.code==='ArrowUp') { e.preventDefault(); changePage(-1); }
+  if (e.code==='ArrowDown') { e.preventDefault(); changePage(1); }
+});
+</script>
+</body>
+</html>
