@@ -6,6 +6,7 @@
 <title>五百字說華語 · 音檔播放器</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
   :root {
     --gold: #c9a84c;
@@ -57,7 +58,9 @@
   #page-controls button:hover { color: var(--gold); }
   #page-num { width: 40px; background: none; border: none; border-bottom: 1px solid rgba(255,255,255,0.15); color: var(--text); text-align: center; font-family: 'DM Mono', monospace; font-size: 11px; outline: none; }
   #book-img-wrap { width: 100%; max-width: 860px; display: flex; justify-content: center; position: relative; }
-  #book-img { width: 100%; max-width: 860px; border-radius: 10px; box-shadow: 0 8px 48px rgba(0,0,0,0.6); display: block; background: var(--surface); min-height: 200px; object-fit: contain; }
+  
+  /* 原本的 img 替換成 canvas 樣式 */
+  #book-canvas { width: 100%; max-width: 860px; border-radius: 10px; box-shadow: 0 8px 48px rgba(0,0,0,0.6); display: block; background: var(--surface); min-height: 200px; }
   #book-loading { display: none; position: absolute; inset: 0; align-items: center; justify-content: center; background: var(--surface); border-radius: 10px; }
   #book-loading.show { display: flex; }
 
@@ -101,7 +104,6 @@
 <body>
 <div id="app">
 
-  <!-- Player Bar -->
   <header id="player-bar">
     <div id="brand">
       <div id="brand-icon">
@@ -155,7 +157,6 @@
     </div>
   </header>
 
-  <!-- Book Viewer -->
   <div id="reader-wrap">
     <div id="reader-toolbar">
       <div id="reader-label">
@@ -166,17 +167,16 @@
         <button onclick="changePage(-1)">&#8249;</button>
         <span>第</span>
         <input type="text" id="page-num" value="1" onchange="jumpToPage(this.value)">
-        <span>頁 / 共 <span id="page-total">239</span> 頁</span>
+        <span>頁 / 共 <span id="page-total">--</span> 頁</span>
         <button onclick="changePage(1)">&#8250;</button>
       </div>
     </div>
     <div id="book-img-wrap">
       <div id="book-loading" class="show"><div class="spinner"></div></div>
-      <img id="book-img" src="" alt="" style="display:none" onload="onImgLoad()" onerror="onImgError()">
+      <canvas id="book-canvas" style="display:none"></canvas>
     </div>
   </div>
 
-  <!-- Sidebar -->
   <aside id="sidebar">
     <div id="sidebar-header">
       <span>Contents</span>
@@ -193,35 +193,81 @@
 <audio id="audio" preload="auto"></audio>
 
 <script>
-// ── Book Viewer ─────────────────────────────────────────────
-const TOTAL_PAGES = 239;
+// ── Book Viewer (改為 PDF.js 版本) ───────────────────────────
 let bookPage = 1;
+let TOTAL_PAGES = 0;
+let pdfDoc = null;
+let pageRendering = false;
+let pageNumPending = null;
+
+const canvas = document.getElementById('book-canvas');
+const ctx = canvas.getContext('2d');
+const loading = document.getElementById('book-loading');
+
+// 設定 PDF.js Worker 路徑
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+function renderPage(num) {
+  pageRendering = true;
+  loading.classList.add('show');
+  canvas.style.display = 'none';
+
+  pdfDoc.getPage(num).then(function(page) {
+    // 渲染解析度放大 1.5 倍確保文字銳利
+    const viewport = page.getViewport({ scale: 1.5 });
+    canvas.height = viewport.height;
+    canvas.width = viewport.width;
+
+    const renderContext = {
+      canvasContext: ctx,
+      viewport: viewport
+    };
+
+    const renderTask = page.render(renderContext);
+    renderTask.promise.then(function() {
+      pageRendering = false;
+      loading.classList.remove('show');
+      canvas.style.display = 'block';
+
+      if (pageNumPending !== null) {
+        renderPage(pageNumPending);
+        pageNumPending = null;
+      }
+    });
+  }).catch(function(err) {
+    loading.classList.remove('show');
+    console.error('PDF 渲染錯誤', err);
+  });
+
+  document.getElementById('page-num').value = num;
+}
 
 function showBookPage(n) {
+  if (!pdfDoc) return;
   bookPage = Math.max(1, Math.min(TOTAL_PAGES, n));
-  document.getElementById('page-num').value = bookPage;
-  const img = document.getElementById('book-img');
-  const loading = document.getElementById('book-loading');
-  img.style.display = 'none';
-  loading.classList.add('show');
-  img.src = `/book/${bookPage}.jpg`;
+  if (pageRendering) {
+    pageNumPending = bookPage;
+  } else {
+    renderPage(bookPage);
+  }
 }
-function onImgLoad() {
-  document.getElementById('book-img').style.display = 'block';
-  document.getElementById('book-loading').classList.remove('show');
-}
-function onImgError() {
-  document.getElementById('book-loading').classList.remove('show');
-  const img = document.getElementById('book-img');
-  img.style.display = 'block';
-  img.alt = `找不到 /book/${bookPage}.jpg`;
-}
+
 function changePage(d) { showBookPage(bookPage + d); }
 function jumpToPage(v) { const n = parseInt(v); if (!isNaN(n)) showBookPage(n); }
 
-showBookPage(1);
+// 初始化載入 /book/book.pdf
+pdfjsLib.getDocument('/book/book.pdf').promise.then(function(pdfDoc_) {
+  pdfDoc = pdfDoc_;
+  TOTAL_PAGES = pdfDoc.numPages;
+  document.getElementById('page-total').textContent = TOTAL_PAGES;
+  showBookPage(1); // 預設顯示第一頁
+}).catch(function(err) {
+  loading.classList.remove('show');
+  console.error('找不到 PDF 檔案或載入失敗', err);
+});
 
-// ── Audio Player ────────────────────────────────────────────
+
+// ── Audio Player (維持不變) ──────────────────────────────────
 const audio = document.getElementById('audio');
 let tracks = [], currentIdx = -1, speedIdx = 0, prevVol = 0.85;
 const speeds = [1, 1.5, 2, 0.75];
@@ -337,8 +383,8 @@ document.addEventListener('keydown', e => {
   if (e.code==='ArrowLeft' && !e.altKey) seekRel(-5);
   if (e.code==='ArrowRight' && e.altKey) { e.preventDefault(); nextTrack(); }
   if (e.code==='ArrowLeft' && e.altKey) { e.preventDefault(); prevTrack(); }
-  if (e.code==='ArrowUp') { e.preventDefault(); changePage(-1); }
-  if (e.code==='ArrowDown') { e.preventDefault(); changePage(1); }
+  if (e.code==='ArrowUp') { e.preventDefault(); changePage(-1); }  // 繼續使用原鍵盤捷徑翻 PDF
+  if (e.code==='ArrowDown') { e.preventDefault(); changePage(1); } // 繼續使用原鍵盤捷徑翻 PDF
 });
 </script>
 </body>
