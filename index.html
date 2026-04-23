@@ -37,7 +37,7 @@
   #progress-thumb { position: absolute; top: 50%; width: 12px; height: 12px; background: var(--gold); border-radius: 50%; transform: translate(-50%,-50%); left: 0%; box-shadow: 0 0 8px var(--gold-glow); pointer-events: none; }
   #controls { display: flex; align-items: center; justify-content: space-between; }
   .ctrl-group { display: flex; align-items: center; gap: 14px; }
-  button { background: none; border: none; cursor: pointer; color: var(--text-dim); display: flex; align-items: center; justify-content: center; transition: color 0.2s, transform 0.1s; }
+  button { background: none; border: none; cursor: pointer; color: var(--text-dim); display: flex; align-items: center; justify-content: center; transition: color 0.2s, transform 0.1s, filter 0.2s; }
   button:hover { color: var(--text); }
   button:active { transform: scale(0.92); }
   #btn-play { width: 48px; height: 48px; border-radius: 50%; background: var(--gold); color: #000 !important; box-shadow: 0 0 20px var(--gold-glow); transition: transform 0.15s, box-shadow 0.15s; }
@@ -56,10 +56,22 @@
   #page-controls button { color: var(--text-dim); font-size: 20px; line-height: 1; padding: 0 2px; }
   #page-controls button:hover { color: var(--gold); }
   #page-num { width: 40px; background: none; border: none; border-bottom: 1px solid rgba(255,255,255,0.15); color: var(--text); text-align: center; font-family: 'DM Mono', monospace; font-size: 11px; outline: none; }
+  
+  /* 圖片容器與點擊區域 */
   #book-img-wrap { width: 100%; max-width: 860px; display: flex; justify-content: center; position: relative; }
   #book-img { width: 100%; max-width: 860px; border-radius: 10px; box-shadow: 0 8px 48px rgba(0,0,0,0.6); display: block; background: var(--surface); min-height: 200px; object-fit: contain; }
-  #book-loading { display: none; position: absolute; inset: 0; align-items: center; justify-content: center; background: var(--surface); border-radius: 10px; }
+  #book-loading { display: none; position: absolute; inset: 0; align-items: center; justify-content: center; background: var(--surface); border-radius: 10px; z-index: 5; }
   #book-loading.show { display: flex; }
+  
+  /* 新增：滑鼠點擊左右翻頁區塊 */
+  .click-zone { position: absolute; top: 0; bottom: 0; width: 40%; cursor: pointer; z-index: 10; border-radius: 10px; transition: background 0.3s; }
+  .click-zone.left { left: 0; }
+  .click-zone.right { right: 0; }
+  /* 電腦版 hover 時顯示微微的漸層提示 */
+  @media (hover: hover) {
+    .click-zone.left:hover { background: linear-gradient(to right, rgba(201,168,76,0.08), transparent); }
+    .click-zone.right:hover { background: linear-gradient(to left, rgba(201,168,76,0.08), transparent); }
+  }
 
   /* Sidebar */
   #sidebar { grid-column: 2/3; grid-row: 1/3; background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
@@ -146,6 +158,10 @@
         <button id="btn-play" onclick="togglePlay()"><svg id="play-icon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
         <button onclick="seekRel(5)" style="flex-direction:column;gap:0;"><span style="font-size:9px;line-height:1;">5</span><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg></button>
         <button onclick="nextTrack()"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zm2-8.14L11.03 12 8 14.14V9.86zM16 6h2v12h-2z"/></svg></button>
+        
+        <button id="btn-loop" onclick="toggleLoop()" title="單軌重複播放">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg>
+        </button>
       </div>
 
       <div class="ctrl-group">
@@ -158,7 +174,7 @@
     <div id="reader-toolbar">
       <div id="reader-label">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 2v5l-2-1-2 1V4h4zm1 14H6V4h3v8l4-2 4 2V4h1v12z"/></svg>
-        教材閱覽 &nbsp;·&nbsp; 五百字說華語 中泰文版 (HuayuWorld)
+        教材閱覽 &nbsp;·&nbsp; 五百字說華語 中泰文版
       </div>
       <div id="page-controls">
         <button onclick="changePage(-1)">&#8249;</button>
@@ -171,6 +187,8 @@
     <div id="book-img-wrap">
       <div id="book-loading" class="show"><div class="spinner"></div></div>
       <img id="book-img" src="" alt="" style="display:none" onload="onImgLoad()" onerror="onImgError()">
+      <div class="click-zone left" onclick="changePage(-1)" title="點擊翻上一頁"></div>
+      <div class="click-zone right" onclick="changePage(1)" title="點擊翻下一頁"></div>
     </div>
   </div>
 
@@ -190,10 +208,9 @@
 <audio id="audio" preload="auto"></audio>
 
 <script>
-// ── Book Viewer (改為讀取 HuayuWorld 遠端圖片) ─────────────
-// 這是你提供的 HuayuWorld 連結基礎目錄
+// ── Book Viewer ─────────────────────────────────────────────
 const HUAYU_BASE = "https://www.huayuworld.org/upload/eBookstore/eBook/%E5%9C%8B%E5%88%A5%E8%A9%B1%E6%95%99%E6%9D%90(001-204)/008.%E4%BA%94%E7%99%BE%E5%AD%97%E8%AA%AA%E8%8F%AF%E8%AA%9E-%E4%B8%AD%E6%B3%B0%E6%96%87%E7%89%88/";
-const TOTAL_PAGES = 244; // 該電子書實際總頁數
+const TOTAL_PAGES = 244; 
 let bookPage = 1;
 
 function showBookPage(n) {
@@ -204,7 +221,6 @@ function showBookPage(n) {
   img.style.display = 'none';
   loading.classList.add('show');
   
-  // HuayuWorld 的 FlipHTML5 系統，圖片通常放在 files/mobile/ 之下
   img.src = `${HUAYU_BASE}files/mobile/${bookPage}.jpg`;
 }
 
@@ -223,10 +239,11 @@ function jumpToPage(v) { const n = parseInt(v); if (!isNaN(n)) showBookPage(n); 
 
 showBookPage(1);
 
-// ── Audio Player (維持原邏輯) ────────────────────────────────
+// ── Audio Player ────────────────────────────────────────────
 const audio = document.getElementById('audio');
 let tracks = [], currentIdx = -1, speedIdx = 0, prevVol = 0.85;
 const speeds = [1, 1.5, 2, 0.75];
+let isLooping = false; // 新增：控制是否重複播放
 
 (async () => {
   const candidates = Array.from({length:30}, (_, i) => {
@@ -291,6 +308,20 @@ function showError(msg) { document.getElementById('error-msg').textContent=msg; 
 function hideError() { document.getElementById('error-bar').classList.remove('show'); }
 function fmt(s) { if(!s||isNaN(s)) return '0:00'; return `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`; }
 
+// 新增：切換單軌重複播放狀態
+function toggleLoop() {
+  isLooping = !isLooping;
+  audio.loop = isLooping; // 直接使用 HTML5 Audio 內建的 loop 屬性
+  const btn = document.getElementById('btn-loop');
+  if (isLooping) {
+    btn.style.color = 'var(--gold)';
+    btn.style.filter = 'drop-shadow(0 0 6px var(--gold-glow))';
+  } else {
+    btn.style.color = 'var(--text-dim)';
+    btn.style.filter = 'none';
+  }
+}
+
 audio.addEventListener('timeupdate', () => {
   const pct = audio.duration ? (audio.currentTime/audio.duration)*100 : 0;
   document.getElementById('progress-fill').style.width = pct+'%';
@@ -300,7 +331,9 @@ audio.addEventListener('timeupdate', () => {
 audio.addEventListener('loadedmetadata', () => { document.getElementById('time-total').textContent = fmt(audio.duration); });
 audio.addEventListener('play', () => { setPlayIcon(true); if(currentIdx>=0) setStatus(currentIdx,'playing'); });
 audio.addEventListener('pause', () => { setPlayIcon(false); if(currentIdx>=0) setStatus(currentIdx,'paused'); });
-audio.addEventListener('ended', nextTrack);
+// 當音檔播放完畢時，如果 audio.loop 是 true，這個 ended 事件就不會觸發，會自動重頭播；
+// 如果是 false，就會觸發 ended，然後執行 nextTrack 播下一首。
+audio.addEventListener('ended', nextTrack); 
 audio.addEventListener('error', () => {
   const msgs = {1:'播放中斷',2:'網路錯誤',3:'音檔解碼錯誤',4:'找不到音檔（404）'};
   showError(msgs[audio.error?.code]||'播放失敗');
