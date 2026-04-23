@@ -58,8 +58,6 @@
   #page-controls button:hover { color: var(--gold); }
   #page-num { width: 40px; background: none; border: none; border-bottom: 1px solid rgba(255,255,255,0.15); color: var(--text); text-align: center; font-family: 'DM Mono', monospace; font-size: 11px; outline: none; }
   #book-img-wrap { width: 100%; max-width: 860px; display: flex; justify-content: center; position: relative; }
-  
-  /* 原本的 img 替換成 canvas 樣式 */
   #book-canvas { width: 100%; max-width: 860px; border-radius: 10px; box-shadow: 0 8px 48px rgba(0,0,0,0.6); display: block; background: var(--surface); min-height: 200px; }
   #book-loading { display: none; position: absolute; inset: 0; align-items: center; justify-content: center; background: var(--surface); border-radius: 10px; }
   #book-loading.show { display: flex; }
@@ -193,7 +191,7 @@
 <audio id="audio" preload="auto"></audio>
 
 <script>
-// ── Book Viewer (改為 PDF.js 版本) ───────────────────────────
+// ── Book Viewer (Google Drive 串接版本) ──────────────────────────
 let bookPage = 1;
 let TOTAL_PAGES = 0;
 let pdfDoc = null;
@@ -204,8 +202,14 @@ const canvas = document.getElementById('book-canvas');
 const ctx = canvas.getContext('2d');
 const loading = document.getElementById('book-loading');
 
-// 設定 PDF.js Worker 路徑
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// 1. Google Drive PDF 處理
+// 這是你的原始連結 ID: 1N7mk9SDyHI20sSOHd7QzfEwTsjq4w1S9
+const FILE_ID = '1N7mk9SDyHI20sSOHd7QzfEwTsjq4w1S9';
+// 使用 direct download 連結，並透過 allorigins 代理伺服器繞過 CORS 限制
+const rawPdfUrl = `https://docs.google.com/uc?export=download&id=${FILE_ID}`;
+const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(rawPdfUrl)}`;
 
 function renderPage(num) {
   pageRendering = true;
@@ -213,7 +217,6 @@ function renderPage(num) {
   canvas.style.display = 'none';
 
   pdfDoc.getPage(num).then(function(page) {
-    // 渲染解析度放大 1.5 倍確保文字銳利
     const viewport = page.getViewport({ scale: 1.5 });
     canvas.height = viewport.height;
     canvas.width = viewport.width;
@@ -255,19 +258,20 @@ function showBookPage(n) {
 function changePage(d) { showBookPage(bookPage + d); }
 function jumpToPage(v) { const n = parseInt(v); if (!isNaN(n)) showBookPage(n); }
 
-// 初始化載入 /book/book.pdf
-pdfjsLib.getDocument('/book/book.pdf').promise.then(function(pdfDoc_) {
+// 初始化：從 Google Drive 載入 PDF
+pdfjsLib.getDocument(proxyUrl).promise.then(function(pdfDoc_) {
   pdfDoc = pdfDoc_;
   TOTAL_PAGES = pdfDoc.numPages;
   document.getElementById('page-total').textContent = TOTAL_PAGES;
-  showBookPage(1); // 預設顯示第一頁
+  showBookPage(1);
 }).catch(function(err) {
   loading.classList.remove('show');
-  console.error('找不到 PDF 檔案或載入失敗', err);
+  console.error('無法載入 Google Drive PDF', err);
+  alert('無法載入 PDF，請確認檔案分享權限是否已設為「知道連結的所有人」。');
 });
 
 
-// ── Audio Player (維持不變) ──────────────────────────────────
+// ── Audio Player (維持原邏輯) ──────────────────────────────────
 const audio = document.getElementById('audio');
 let tracks = [], currentIdx = -1, speedIdx = 0, prevVol = 0.85;
 const speeds = [1, 1.5, 2, 0.75];
@@ -383,8 +387,8 @@ document.addEventListener('keydown', e => {
   if (e.code==='ArrowLeft' && !e.altKey) seekRel(-5);
   if (e.code==='ArrowRight' && e.altKey) { e.preventDefault(); nextTrack(); }
   if (e.code==='ArrowLeft' && e.altKey) { e.preventDefault(); prevTrack(); }
-  if (e.code==='ArrowUp') { e.preventDefault(); changePage(-1); }  // 繼續使用原鍵盤捷徑翻 PDF
-  if (e.code==='ArrowDown') { e.preventDefault(); changePage(1); } // 繼續使用原鍵盤捷徑翻 PDF
+  if (e.code==='ArrowUp') { e.preventDefault(); changePage(-1); }
+  if (e.code==='ArrowDown') { e.preventDefault(); changePage(1); }
 });
 </script>
 </body>
