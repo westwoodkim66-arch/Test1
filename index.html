@@ -6,7 +6,6 @@
 <title>五百字說華語 · 音檔播放器</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
   :root {
     --gold: #c9a84c;
@@ -58,7 +57,7 @@
   #page-controls button:hover { color: var(--gold); }
   #page-num { width: 40px; background: none; border: none; border-bottom: 1px solid rgba(255,255,255,0.15); color: var(--text); text-align: center; font-family: 'DM Mono', monospace; font-size: 11px; outline: none; }
   #book-img-wrap { width: 100%; max-width: 860px; display: flex; justify-content: center; position: relative; }
-  #book-canvas { width: 100%; max-width: 860px; border-radius: 10px; box-shadow: 0 8px 48px rgba(0,0,0,0.6); display: block; background: var(--surface); min-height: 200px; }
+  #book-img { width: 100%; max-width: 860px; border-radius: 10px; box-shadow: 0 8px 48px rgba(0,0,0,0.6); display: block; background: var(--surface); min-height: 200px; object-fit: contain; }
   #book-loading { display: none; position: absolute; inset: 0; align-items: center; justify-content: center; background: var(--surface); border-radius: 10px; }
   #book-loading.show { display: flex; }
 
@@ -159,19 +158,19 @@
     <div id="reader-toolbar">
       <div id="reader-label">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 2v5l-2-1-2 1V4h4zm1 14H6V4h3v8l4-2 4 2V4h1v12z"/></svg>
-        教材閱覽 &nbsp;·&nbsp; 五百字說華語 中泰文版
+        教材閱覽 &nbsp;·&nbsp; 五百字說華語 中泰文版 (HuayuWorld)
       </div>
       <div id="page-controls">
         <button onclick="changePage(-1)">&#8249;</button>
         <span>第</span>
         <input type="text" id="page-num" value="1" onchange="jumpToPage(this.value)">
-        <span>頁 / 共 <span id="page-total">--</span> 頁</span>
+        <span>頁 / 共 <span id="page-total">244</span> 頁</span>
         <button onclick="changePage(1)">&#8250;</button>
       </div>
     </div>
     <div id="book-img-wrap">
       <div id="book-loading" class="show"><div class="spinner"></div></div>
-      <canvas id="book-canvas" style="display:none"></canvas>
+      <img id="book-img" src="" alt="" style="display:none" onload="onImgLoad()" onerror="onImgError()">
     </div>
   </div>
 
@@ -191,87 +190,40 @@
 <audio id="audio" preload="auto"></audio>
 
 <script>
-// ── Book Viewer (Google Drive 串接版本) ──────────────────────────
+// ── Book Viewer (改為讀取 HuayuWorld 遠端圖片) ─────────────
+// 這是你提供的 HuayuWorld 連結基礎目錄
+const HUAYU_BASE = "https://www.huayuworld.org/upload/eBookstore/eBook/%E5%9C%8B%E5%88%A5%E8%A9%B1%E6%95%99%E6%9D%90(001-204)/008.%E4%BA%94%E7%99%BE%E5%AD%97%E8%AA%AA%E8%8F%AF%E8%AA%9E-%E4%B8%AD%E6%B3%B0%E6%96%87%E7%89%88/";
+const TOTAL_PAGES = 244; // 該電子書實際總頁數
 let bookPage = 1;
-let TOTAL_PAGES = 0;
-let pdfDoc = null;
-let pageRendering = false;
-let pageNumPending = null;
-
-const canvas = document.getElementById('book-canvas');
-const ctx = canvas.getContext('2d');
-const loading = document.getElementById('book-loading');
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-
-// 1. Google Drive PDF 處理
-// 這是你的原始連結 ID: 1N7mk9SDyHI20sSOHd7QzfEwTsjq4w1S9
-const FILE_ID = '1N7mk9SDyHI20sSOHd7QzfEwTsjq4w1S9';
-// 使用 direct download 連結，並透過 allorigins 代理伺服器繞過 CORS 限制
-const rawPdfUrl = `https://docs.google.com/uc?export=download&id=${FILE_ID}`;
-const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(rawPdfUrl)}`;
-
-function renderPage(num) {
-  pageRendering = true;
-  loading.classList.add('show');
-  canvas.style.display = 'none';
-
-  pdfDoc.getPage(num).then(function(page) {
-    const viewport = page.getViewport({ scale: 1.5 });
-    canvas.height = viewport.height;
-    canvas.width = viewport.width;
-
-    const renderContext = {
-      canvasContext: ctx,
-      viewport: viewport
-    };
-
-    const renderTask = page.render(renderContext);
-    renderTask.promise.then(function() {
-      pageRendering = false;
-      loading.classList.remove('show');
-      canvas.style.display = 'block';
-
-      if (pageNumPending !== null) {
-        renderPage(pageNumPending);
-        pageNumPending = null;
-      }
-    });
-  }).catch(function(err) {
-    loading.classList.remove('show');
-    console.error('PDF 渲染錯誤', err);
-  });
-
-  document.getElementById('page-num').value = num;
-}
 
 function showBookPage(n) {
-  if (!pdfDoc) return;
   bookPage = Math.max(1, Math.min(TOTAL_PAGES, n));
-  if (pageRendering) {
-    pageNumPending = bookPage;
-  } else {
-    renderPage(bookPage);
-  }
+  document.getElementById('page-num').value = bookPage;
+  const img = document.getElementById('book-img');
+  const loading = document.getElementById('book-loading');
+  img.style.display = 'none';
+  loading.classList.add('show');
+  
+  // HuayuWorld 的 FlipHTML5 系統，圖片通常放在 files/mobile/ 之下
+  img.src = `${HUAYU_BASE}files/mobile/${bookPage}.jpg`;
 }
 
+function onImgLoad() {
+  document.getElementById('book-img').style.display = 'block';
+  document.getElementById('book-loading').classList.remove('show');
+}
+function onImgError() {
+  document.getElementById('book-loading').classList.remove('show');
+  const img = document.getElementById('book-img');
+  img.style.display = 'block';
+  img.alt = `無法從僑務電子報載入第 ${bookPage} 頁`;
+}
 function changePage(d) { showBookPage(bookPage + d); }
 function jumpToPage(v) { const n = parseInt(v); if (!isNaN(n)) showBookPage(n); }
 
-// 初始化：從 Google Drive 載入 PDF
-pdfjsLib.getDocument(proxyUrl).promise.then(function(pdfDoc_) {
-  pdfDoc = pdfDoc_;
-  TOTAL_PAGES = pdfDoc.numPages;
-  document.getElementById('page-total').textContent = TOTAL_PAGES;
-  showBookPage(1);
-}).catch(function(err) {
-  loading.classList.remove('show');
-  console.error('無法載入 Google Drive PDF', err);
-  alert('無法載入 PDF，請確認檔案分享權限是否已設為「知道連結的所有人」。');
-});
+showBookPage(1);
 
-
-// ── Audio Player (維持原邏輯) ──────────────────────────────────
+// ── Audio Player (維持原邏輯) ────────────────────────────────
 const audio = document.getElementById('audio');
 let tracks = [], currentIdx = -1, speedIdx = 0, prevVol = 0.85;
 const speeds = [1, 1.5, 2, 0.75];
